@@ -87,6 +87,114 @@ jobs:
           echo "needs_update=$NEEDS_UPDATE" >> $GITHUB_OUTPUT
           echo "Needs update: $NEEDS_UPDATE"
 
+      - name: Close outdated upstream PRs
+        if: steps.compare.outputs.needs_update == 'true'
+        id: close_old_prs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const upstreamVersion = '${{ steps.upstream.outputs.version }}';
+            const newBranchName = `upstream-update/v${upstreamVersion}`;
+
+            // Find all open PRs with upstream-update label or branch prefix
+            const { data: pullRequests } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const upstreamPRs = pullRequests.filter(pr =>
+              pr.head.ref.startsWith('upstream-update/') &&
+              pr.head.ref !== newBranchName
+            );
+
+            const closedPRs = [];
+            const deletedBranches = [];
+
+            for (const pr of upstreamPRs) {
+              console.log(`Found outdated upstream PR #${pr.number}: ${pr.title}`);
+
+              // Add a comment explaining why we're closing it
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## Superseded by Newer Version
+
+            This PR has been automatically closed because a newer upstream version (**v${upstreamVersion}**) is now available.
+
+            A new PR will be created for the latest version, which includes all changes from this version.
+
+            ---
+            *Closed automatically by the nightly upstream check workflow.*`
+              });
+
+              // Close the PR
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                state: 'closed'
+              });
+
+              closedPRs.push(`#${pr.number} (${pr.head.ref})`);
+
+              // Try to delete the branch
+              try {
+                await github.rest.git.deleteRef({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ref: `heads/${pr.head.ref}`
+                });
+                deletedBranches.push(pr.head.ref);
+                console.log(`Deleted branch: ${pr.head.ref}`);
+              } catch (e) {
+                console.log(`Could not delete branch ${pr.head.ref}: ${e.message}`);
+              }
+            }
+
+            // Also close any related open issues about merge conflicts
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'upstream-update',
+              per_page: 100
+            });
+
+            const conflictIssues = issues.filter(issue =>
+              !issue.pull_request &&
+              issue.title.includes('merge conflicts') &&
+              !issue.title.includes(upstreamVersion)
+            );
+
+            for (const issue of conflictIssues) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `Closing as a newer version (v${upstreamVersion}) is now being processed.`
+              });
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed'
+              });
+
+              console.log(`Closed outdated conflict issue #${issue.number}`);
+            }
+
+            // Output summary
+            core.setOutput('closed_prs', closedPRs.join(', ') || 'none');
+            core.setOutput('deleted_branches', deletedBranches.join(', ') || 'none');
+
+            if (closedPRs.length > 0) {
+              console.log(`Closed ${closedPRs.length} outdated PR(s): ${closedPRs.join(', ')}`);
+            }
+
       - name: Setup git config
         if: steps.compare.outputs.needs_update == 'true'
         run: |
@@ -171,8 +279,11 @@ jobs:
             ### Upstream Comparison
             [View changes on upstream](https://github.com/${{ env.UPSTREAM_REPO }}/compare/v${{ steps.current.outputs.version }}...v${{ steps.upstream.outputs.version }})
 
+            ### Superseded PRs
+            ${{ steps.close_old_prs.outputs.closed_prs != 'none' && format('The following PRs were closed as they are now outdated: {0}', steps.close_old_prs.outputs.closed_prs) || 'No previous upstream PRs were pending.' }}
+
             ### After Merging
-            Once this PR is merged, a new release tag `v${{ steps.upstream.outputs.version }}` should be created.
+            Once this PR is merged, a new release tag `v${{ steps.upstream.outputs.version }}` will be created automatically.
 
             ---
             *This PR was automatically created by the nightly upstream check workflow.*
@@ -238,6 +349,8 @@ jobs:
           echo "| Upstream Version | ${{ steps.upstream.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Update Needed | ${{ steps.compare.outputs.needs_update }} |" >> $GITHUB_STEP_SUMMARY
           if [ "${{ steps.compare.outputs.needs_update }}" = "true" ]; then
+            echo "| Superseded PRs | ${{ steps.close_old_prs.outputs.closed_prs }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Deleted Branches | ${{ steps.close_old_prs.outputs.deleted_branches }} |" >> $GITHUB_STEP_SUMMARY
             if [ "${{ steps.branch.outputs.branch_exists }}" = "true" ]; then
               echo "| Status | Branch already exists |" >> $GITHUB_STEP_SUMMARY
             elif [ "${{ steps.merge.outputs.merge_success }}" = "true" ]; then
