@@ -74,7 +74,7 @@ agent-browser scroll <dir> [px]       # Scroll (up/down/left/right)
 agent-browser scrollintoview <sel>    # Scroll element into view (alias: scrollinto)
 agent-browser drag <src> <tgt>        # Drag and drop
 agent-browser upload <sel> <files>    # Upload files
-agent-browser screenshot [path]       # Take screenshot (--full for full page, base64 png to stdout if no path)
+agent-browser screenshot [path]       # Take screenshot (--full for full page, saves to a temporary directory if no path)
 agent-browser pdf <path>              # Save as PDF
 agent-browser snapshot                # Accessibility tree with refs (best for AI)
 agent-browser eval <js>               # Run JavaScript
@@ -327,12 +327,14 @@ agent-browser snapshot -i -c -d 5         # Combine options
 | `--user-agent <ua>` | Custom User-Agent string (or `AGENT_BROWSER_USER_AGENT` env) |
 | `--proxy <url>` | Proxy server URL with optional auth (or `AGENT_BROWSER_PROXY` env) |
 | `--proxy-bypass <hosts>` | Hosts to bypass proxy (or `AGENT_BROWSER_PROXY_BYPASS` env) |
+| `-p, --provider <name>` | Cloud browser provider (or `AGENT_BROWSER_PROVIDER` env) |
 | `--json` | JSON output (for agents) |
 | `--full, -f` | Full page screenshot |
 | `--name, -n` | Locator name filter |
 | `--exact` | Exact text match |
 | `--headed` | Show browser window (not headless) |
 | `--cdp <port>` | Connect via Chrome DevTools Protocol |
+| `--ignore-https-errors` | Ignore HTTPS certificate errors (useful for self-signed certs) |
 | `--debug` | Debug output |
 
 ## Selectors
@@ -661,6 +663,16 @@ Use agent-browser to test the login flow. Run agent-browser --help to see availa
 
 The `--help` output is comprehensive and most agents can figure it out from there.
 
+### AI Coding Assistants
+
+Add the skill to your AI coding assistant for richer context:
+
+```bash
+npx skills add vercel-labs/agent-browser
+```
+
+This works with Claude Code, Codex, Cursor, Gemini CLI, GitHub Copilot, Goose, OpenCode, and Windsurf.
+
 ### AGENTS.md / CLAUDE.md
 
 For more consistent results, add to your project or global instructions file:
@@ -677,45 +689,30 @@ Core workflow:
 4. Re-snapshot after page changes
 ```
 
-### Claude Code Skill
-
-For Claude Code, a [skill](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) provides richer context.
-
-**Plugin (recommended):**
-
-```bash
-/plugin marketplace add vercel-labs/agent-browser
-/plugin install agent-browser
-```
-
-**Manual install:**
-
-```bash
-cp -r node_modules/agent-browser/skills/agent-browser .claude/skills/
-```
-
-Or download directly:
-
-```bash
-mkdir -p .claude/skills/agent-browser
-curl -o .claude/skills/agent-browser/SKILL.md \
-  https://raw.githubusercontent.com/vercel-labs/agent-browser/main/skills/agent-browser/SKILL.md
-```
-
 ## Integrations
 
 ### Browserbase
 
 [Browserbase](https://browserbase.com) provides remote browser infrastructure to make deployment of agentic browsing agents easy. Use it when running the agent-browser CLI in an environment where a local browser isn't feasible.
 
-To enable Browserbase, set these environment variables:
+To enable Browserbase, use the `-p` flag:
 
 ```bash
 export BROWSERBASE_API_KEY="your-api-key"
 export BROWSERBASE_PROJECT_ID="your-project-id"
+agent-browser -p browserbase open https://example.com
 ```
 
-When both variables are set, agent-browser automatically connects to a Browserbase session instead of launching a local browser. All commands work identically.
+Or use environment variables for CI/scripts:
+
+```bash
+export AGENT_BROWSER_PROVIDER=browserbase
+export BROWSERBASE_API_KEY="your-api-key"
+export BROWSERBASE_PROJECT_ID="your-project-id"
+agent-browser open https://example.com
+```
+
+When enabled, agent-browser connects to a Browserbase session instead of launching a local browser. All commands work identically.
 
 Get your API key and project ID from the [Browserbase Dashboard](https://browserbase.com/overview).
 
@@ -741,6 +738,40 @@ agent-browser open https://example.com
 When enabled, agent-browser connects to a Browser Use cloud session instead of launching a local browser. All commands work identically.
 
 Get your API key from the [Browser Use Cloud Dashboard](https://cloud.browser-use.com/settings?tab=api-keys). Free credits are available to get started, with pay-as-you-go pricing after.
+
+### Kernel
+
+[Kernel](https://www.kernel.sh) provides cloud browser infrastructure for AI agents with features like stealth mode and persistent profiles.
+
+To enable Kernel, use the `-p` flag:
+
+```bash
+export KERNEL_API_KEY="your-api-key"
+agent-browser -p kernel open https://example.com
+```
+
+Or use environment variables for CI/scripts:
+
+```bash
+export AGENT_BROWSER_PROVIDER=kernel
+export KERNEL_API_KEY="your-api-key"
+agent-browser open https://example.com
+```
+
+Optional configuration via environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `KERNEL_HEADLESS` | Run browser in headless mode (`true`/`false`) | `false` |
+| `KERNEL_STEALTH` | Enable stealth mode to avoid bot detection (`true`/`false`) | `true` |
+| `KERNEL_TIMEOUT_SECONDS` | Session timeout in seconds | `300` |
+| `KERNEL_PROFILE_NAME` | Browser profile name for persistent cookies/logins (created if it doesn't exist) | (none) |
+
+When enabled, agent-browser connects to a Kernel cloud session instead of launching a local browser. All commands work identically.
+
+**Profile Persistence:** When `KERNEL_PROFILE_NAME` is set, the profile will be created if it doesn't already exist. Cookies, logins, and session data are automatically saved back to the profile when the browser session ends, making them available for future sessions.
+
+Get your API key from the [Kernel Dashboard](https://dashboard.onkernel.com).
 
 ## License
 

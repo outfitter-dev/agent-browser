@@ -122,6 +122,13 @@ describe('parseCommand', () => {
       const result = parseCommand(cmd({ id: '1', action: 'screenshot', fullPage: true }));
       expect(result.success).toBe(true);
     });
+
+    it('should parse screenshot with null selector', () => {
+      const result = parseCommand(
+        cmd({ id: '1', action: 'screenshot', path: 'test.png', selector: null })
+      );
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('cookies', () => {
@@ -501,6 +508,27 @@ describe('parseCommand', () => {
 
     it('should reject launch with non-numeric cdpPort', () => {
       const result = parseCommand(cmd({ id: '1', action: 'launch', cdpPort: 'invalid' }));
+      expect(result.success).toBe(false);
+    });
+
+    it('should parse launch with ignoreHTTPSErrors true', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', ignoreHTTPSErrors: true }));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.ignoreHTTPSErrors).toBe(true);
+      }
+    });
+
+    it('should parse launch with ignoreHTTPSErrors false', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', ignoreHTTPSErrors: false }));
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.command.ignoreHTTPSErrors).toBe(false);
+      }
+    });
+
+    it('should reject launch with non-boolean ignoreHTTPSErrors', () => {
+      const result = parseCommand(cmd({ id: '1', action: 'launch', ignoreHTTPSErrors: 'true' }));
       expect(result.success).toBe(false);
     });
   });
